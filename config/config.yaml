@@ -1,0 +1,24 @@
+# VoltGuard Configuration — Phase 1
+# Centralized configuration for all safety limits and system parameters.
+# Do NOT scatter these values throughout the codebase.
+
+voltguard:
+  version: "0.1.0"
+  service_name: "VoltGuard Backend"
+  mode: "offline"  # offline | online | hybrid
+
+# Physical safety limits for the industrial process.
+# These are prototype defaults and will be tuned during commissioning.
+safety_limits:
+  max_pressure: 150.0        # bar
+  max_rpm: 3600               # RPM
+  max_temperature: 350.0      # °C
+  max_flow: 500.0             # L/min
+  max_stress: 250.0           # MPa
+
+database:
+  url: "sqlite:///data/voltguard.db"
+
+server:
+  host: "0.0.0.0"
+  port: 8000

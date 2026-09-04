@@ -1,0 +1,11 @@
+system:
+  mode: offline
+
+network:
+  external_connectivity: false
+
+telemetry:
+  remote_sync: false
+
+updates:
+  automatic_download: false

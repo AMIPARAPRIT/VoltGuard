@@ -1,0 +1,14 @@
+system:
+  mode: hybrid
+
+network:
+  external_connectivity: true
+
+telemetry:
+  remote_sync: true
+
+updates:
+  automatic_download: false
+
+protection:
+  cloud_dependency: false
