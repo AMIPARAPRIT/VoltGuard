@@ -1,20 +1,43 @@
-# VoltGuard Configuration — Phase 1
+# VoltGuard Configuration — Phase 1 + Phase 2
 # Centralized configuration for all safety limits and system parameters.
 # Do NOT scatter these values throughout the codebase.
 
 voltguard:
-  version: "0.1.0"
+  version: "0.2.0"
   service_name: "VoltGuard Backend"
   mode: "offline"  # offline | online | hybrid
 
 # Physical safety limits for the industrial process.
 # These are prototype defaults and will be tuned during commissioning.
+# Units: pressure=bar, rpm=RPM, temperature=°C, flow=L/min, stress=MPa
 safety_limits:
-  max_pressure: 150.0        # bar
-  max_rpm: 3600               # RPM
-  max_temperature: 350.0      # °C
+  max_pressure: 80.0          # bar  — pipeline burst threshold (prototype scale)
+  max_rpm: 3600               # RPM  — motor overspeed limit
+  max_temperature: 120.0      # °C   — fluid temperature limit
   max_flow: 500.0             # L/min
-  max_stress: 250.0           # MPa
+  max_stress: 130.0           # MPa  — hoop stress limit
+
+# Physics engine model parameters.
+# These govern the equations inside the simulator — NOT safety limits.
+# Reference: simplified pump-valve-pipeline model (prototype only).
+physics:
+  reference_rpm: 3000.0         # RPM at which base_flow is defined
+  base_flow: 300.0              # L/min at reference_rpm, full valve, 100% efficiency
+  default_pump_efficiency: 0.85 # fractional (0–1)
+  default_pipeline_resistance: 1.0  # dimensionless resistance coefficient
+  # Pressure rise coefficient: bar per (L/min)^2 * resistance
+  # Tuned so scenario zones are meaningful:
+  #   RPM=1500 → SAFE   (~29% of 80 bar limit)
+  #   RPM=2400 → WARNING (~80% of 80 bar limit)
+  #   RPM=2900 → CRITICAL/CATASTROPHIC (>100% of limit)
+  #   RPM=50000 → deep CATASTROPHIC
+  pressure_gain_coefficient: 0.0016    # bar / (L/min)^2
+  # Pressure loss coefficient per unit resistance
+  pressure_loss_coefficient: 0.0002    # bar / (L/min) per resistance unit
+  # Temperature rise: °C per L/min of flow above baseline
+  thermal_gain_coefficient: 0.04       # °C / (L/min)
+  # Stress proportional to pressure: MPa per bar
+  stress_per_bar: 1.55                 # MPa / bar
 
 database:
   url: "sqlite:///data/voltguard.db"

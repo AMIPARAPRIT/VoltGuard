@@ -2,7 +2,7 @@
 VoltGuard — Centralized Configuration
 
 Loads settings from config/config.yaml and exposes them as typed Pydantic models.
-All safety limits, database URLs, and server params live here — never scattered.
+All safety limits, database URLs, server params, and physics constants live here.
 """
 
 import os
@@ -19,12 +19,39 @@ CONFIG_PATH = PROJECT_ROOT / "config" / "config.yaml"
 
 
 class SafetyLimits(BaseModel):
-    """Physical safety thresholds for the industrial process."""
-    max_pressure: float = 150.0       # bar
+    """Physical safety thresholds for the industrial process.
+
+    Units: pressure=bar, rpm=RPM, temperature=°C, flow=L/min, stress=MPa
+    """
+    max_pressure: float = 80.0        # bar  (prototype scale)
     max_rpm: int = 3600               # RPM
-    max_temperature: float = 350.0    # °C
+    max_temperature: float = 120.0    # °C
     max_flow: float = 500.0           # L/min
-    max_stress: float = 250.0         # MPa
+    max_stress: float = 130.0         # MPa
+
+
+class PhysicsParameters(BaseModel):
+    """
+    Physics engine model constants.
+
+    These govern the simulation equations — NOT safety limits.
+    Loaded from the [physics] block in config.yaml.
+    All values have engineering-sensible defaults so tests run without a file.
+
+    Assumptions (prototype):
+    - Centrifugal pump: flow is linear with RPM and valve position.
+    - Pressure rise quadratic in flow (simplified Bernoulli / head-loss model).
+    - Temperature rises linearly with flow above an ambient baseline.
+    - Pipeline hoop stress proportional to internal pressure.
+    """
+    reference_rpm: float = 3000.0           # RPM defining base_flow
+    base_flow: float = 300.0                # L/min at ref RPM, full valve, 100% eff.
+    default_pump_efficiency: float = 0.85   # fraction 0-1
+    default_pipeline_resistance: float = 1.0
+    pressure_gain_coefficient: float = 0.0016    # bar / (L/min)^2 (tuned for prototype zones)
+    pressure_loss_coefficient: float = 0.0002    # bar / (L/min) / resistance
+    thermal_gain_coefficient: float = 0.04       # °C / (L/min)
+    stress_per_bar: float = 1.55                 # MPa / bar
 
 
 class DatabaseConfig(BaseModel):
@@ -40,7 +67,7 @@ class ServerConfig(BaseModel):
 
 class VoltGuardInfo(BaseModel):
     """Top-level application metadata."""
-    version: str = "0.1.0"
+    version: str = "0.2.0"
     service_name: str = "VoltGuard Backend"
     mode: str = "offline"
 
@@ -54,6 +81,7 @@ class Settings(BaseModel):
     """
     voltguard: VoltGuardInfo = VoltGuardInfo()
     safety_limits: SafetyLimits = SafetyLimits()
+    physics: PhysicsParameters = PhysicsParameters()
     database: DatabaseConfig = DatabaseConfig()
     server: ServerConfig = ServerConfig()
 
@@ -77,3 +105,4 @@ def get_settings() -> Settings:
     """
     raw = _load_yaml()
     return Settings(**raw)
+

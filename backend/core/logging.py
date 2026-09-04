@@ -31,12 +31,19 @@ def _configure_root_logger() -> None:
     root = logging.getLogger("voltguard")
     root.setLevel(logging.DEBUG)
 
-    # Console handler
+    # Console handler — INFO and above go to stdout
     console = logging.StreamHandler(sys.stdout)
-    console.setLevel(logging.DEBUG)
+    console.setLevel(logging.INFO)
     console.setFormatter(logging.Formatter(LOG_FORMAT, datefmt=DATE_FORMAT))
 
+    # Debug handler — DEBUG goes to stderr (keeps demo output clean)
+    debug_handler = logging.StreamHandler(sys.stderr)
+    debug_handler.setLevel(logging.DEBUG)
+    debug_handler.addFilter(lambda r: r.levelno < logging.INFO)
+    debug_handler.setFormatter(logging.Formatter(LOG_FORMAT, datefmt=DATE_FORMAT))
+
     root.addHandler(console)
+    root.addHandler(debug_handler)
 
     # Suppress noisy third-party loggers
     logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
