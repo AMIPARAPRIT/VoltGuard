@@ -13,6 +13,8 @@ from sqlalchemy.orm import Session
 from backend.database.database import get_db
 from backend.services.pipeline_service import pipeline_service
 from backend.services.simulation_service import simulation_service
+from backend.models.simulation import SimulationHistory
+import json
 
 router = APIRouter(prefix="/simulation", tags=["Simulation Control"])
 
@@ -27,6 +29,7 @@ class CommandSimulationRequest(BaseModel):
     command: Optional[str] = Field(None, description="Normalized command (e.g. 'SET_RPM', 'SET_VALVE')", json_schema_extra={"example": "SET_RPM"})
     value: Optional[float] = Field(None, description="Target command value (e.g. 1500.0, 50000.0)", json_schema_extra={"example": 50000.0})
     device_id: Optional[str] = Field(None, description="Target OT device ID", json_schema_extra={"example": "Pump-01"})
+    scenario: Optional[str] = Field(None, description="Scenario type e.g., NORMAL, WARNING, CRITICAL, ATTACK, CUSTOM")
     
     current_state: Optional[Dict[str, float]] = Field(None, description="Optional current state overrides", json_schema_extra={"example": {"current_pressure": 2.0}})
 
@@ -74,6 +77,24 @@ def process_simulation_command(
             current_state=request.current_state,
             db_session=db
         )
+        
+        # Save to history
+        sim_history = SimulationHistory(
+            scenario=request.scenario or "CUSTOM",
+            device_id=request.device_id or "Pump-01",
+            protocol=request.protocol,
+            command=request.command or "RAW",
+            command_value=request.value or 0.0,
+            risk_score=result.get("decision_result", {}).get("risk_score"),
+            safety_state=result.get("decision_result", {}).get("safety_state"),
+            decision=result.get("decision_result", {}).get("decision"),
+            event_id=result.get("event_id"),
+            alert_id=result.get("alert_id"),
+            raw_result=json.dumps(result)
+        )
+        db.add(sim_history)
+        db.commit()
+        
         return result
     except Exception as e:
         raise HTTPException(
@@ -118,3 +139,48 @@ def get_simulation_status():
     Get current background simulation status.
     """
     return simulation_service.get_status()
+
+@router.get("/history", response_model=Dict[str, Any], status_code=status.HTTP_200_OK)
+def get_simulation_history(db: Session = Depends(get_db)):
+    from sqlalchemy import desc
+    hist = db.query(SimulationHistory).order_by(desc(SimulationHistory.timestamp)).limit(50).all()
+    return {
+        "items": [
+            {
+                "id": h.id,
+                "timestamp": h.timestamp.isoformat(),
+                "scenario": h.scenario,
+                "device_id": h.device_id,
+                "protocol": h.protocol,
+                "command": h.command,
+                "command_value": h.command_value,
+                "risk_score": h.risk_score,
+                "safety_state": h.safety_state,
+                "decision": h.decision,
+                "event_id": h.event_id,
+                "alert_id": h.alert_id
+            } for h in hist
+        ]
+    }
+
+@router.get("/history/{sim_id}", response_model=Dict[str, Any], status_code=status.HTTP_200_OK)
+def get_simulation_detail(sim_id: int, db: Session = Depends(get_db)):
+    h = db.query(SimulationHistory).filter(SimulationHistory.id == sim_id).first()
+    if not h:
+        raise HTTPException(status_code=404, detail="Simulation not found")
+    
+    return {
+        "id": h.id,
+        "timestamp": h.timestamp.isoformat(),
+        "scenario": h.scenario,
+        "device_id": h.device_id,
+        "protocol": h.protocol,
+        "command": h.command,
+        "command_value": h.command_value,
+        "risk_score": h.risk_score,
+        "safety_state": h.safety_state,
+        "decision": h.decision,
+        "event_id": h.event_id,
+        "alert_id": h.alert_id,
+        "raw_result": json.loads(h.raw_result) if h.raw_result else None
+    }

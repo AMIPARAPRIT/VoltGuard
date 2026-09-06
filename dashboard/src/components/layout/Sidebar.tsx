@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, ShieldAlert, Server, Bell, PlaySquare } from 'lucide-react';
+import { LayoutDashboard, ShieldAlert, Server, Bell, PlaySquare, FileText } from 'lucide-react';
 import { api } from '../../services/api';
 import { useWebSocketAlerts } from '../../hooks/useWebSocketAlerts';
 
@@ -34,6 +34,7 @@ export const Sidebar: React.FC = () => {
     { to: '/alerts', label: 'Alerts', icon: Bell, badge: activeAlertCount > 0 ? activeAlertCount : null, exact: false },
     { to: '/devices', label: 'OT Devices', icon: Server, badge: null, exact: false },
     { to: '/simulation', label: 'Simulation Control', icon: PlaySquare, badge: null, exact: false },
+    { to: '/reports', label: 'Report Center', icon: FileText, badge: null, exact: false },
   ];
 
   return (

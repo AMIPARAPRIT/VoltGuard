@@ -1,4 +1,4 @@
-import { SystemStatus, SecurityEvent, Alert, Telemetry, PipelineResponse, AlertSummary, PaginatedResponse, Device } from '../types';
+import { SystemStatus, SecurityEvent, Alert, Telemetry, PipelineResponse, AlertSummary, PaginatedResponse, Device, SimulationHistoryItem, ReportMetadata } from '../types';
 
 const API_BASE = '/api';
 
@@ -122,4 +122,28 @@ export const api = {
   async getSimulationStatus(): Promise<{ running: boolean; mode: string; rate_fps: number; processed_count: number }> {
     return fetchJson(`${API_BASE}/simulation/status`);
   },
+
+  async getSimulationHistory(): Promise<{ items: SimulationHistoryItem[] }> {
+    return fetchJson<{ items: SimulationHistoryItem[] }>(`${API_BASE}/simulation/history`);
+  },
+
+  async getSimulationDetail(simId: number): Promise<SimulationHistoryItem> {
+    return fetchJson<SimulationHistoryItem>(`${API_BASE}/simulation/history/${simId}`);
+  },
+
+  async getReports(): Promise<ReportMetadata[]> {
+    return fetchJson<ReportMetadata[]>(`${API_BASE}/reports`);
+  },
+
+  async generateReport(payload: any): Promise<{ metadata: ReportMetadata, data: any }> {
+    return fetchJson<{ metadata: ReportMetadata, data: any }>(`${API_BASE}/reports`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+  },
+
+  getReportDownloadUrl(reportId: number): string {
+    return `${API_BASE}/reports/${reportId}/export`;
+  }
 };

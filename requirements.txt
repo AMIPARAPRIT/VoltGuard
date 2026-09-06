@@ -27,3 +27,6 @@ pymodbus>=3.6.0
 # Physics engine (Phase 2)
 numpy>=1.26.0
 scipy>=1.13.0
+
+# PDF Generation
+fpdf2>=2.7.0

@@ -181,3 +181,29 @@ export interface WebSocketMessage {
   alert_id?: number;
   total_latency_ms?: number;
 }
+
+export interface SimulationHistoryItem {
+  id: number;
+  timestamp: string;
+  scenario: string;
+  device_id: string;
+  protocol: string;
+  command: string;
+  command_value: number;
+  risk_score: number;
+  safety_state: SafetyState;
+  decision: Decision;
+  event_id?: number;
+  alert_id?: number;
+  raw_result?: any;
+}
+
+export interface ReportMetadata {
+  id: number;
+  report_id: string;
+  report_type: string;
+  generated_at: string;
+  status: string;
+  primary_device?: string;
+  severity?: string;
+}

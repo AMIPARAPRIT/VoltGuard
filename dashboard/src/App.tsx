@@ -7,6 +7,7 @@ import { EventsPage } from './pages/Events';
 import { AlertsPage } from './pages/Alerts';
 import { DevicesPage } from './pages/Devices';
 import { SimulationPage } from './pages/Simulation';
+import { ReportsPage } from './pages/Reports';
 import { ToastContainer } from './components/common/Toast';
 import { SystemStatus } from './types';
 import { api } from './services/api';
@@ -42,6 +43,7 @@ export const App: React.FC = () => {
               <Route path="/alerts" element={<AlertsPage />} />
               <Route path="/devices" element={<DevicesPage />} />
               <Route path="/simulation" element={<SimulationPage />} />
+              <Route path="/reports" element={<ReportsPage />} />
             </Routes>
           </main>
         </div>
