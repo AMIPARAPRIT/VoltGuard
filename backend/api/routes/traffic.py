@@ -1,8 +1,8 @@
 """
-VoltGuard API — Traffic Parsing & Processing Routes
+VoltGuard API — Traffic Parsing, Physics & Decision Processing Routes
 
 Provides REST endpoints to process raw industrial network payloads (Modbus/TCP, DNP3)
-through the C++ Protocol Parser and Physics Engine.
+through the C++ Protocol Parser, Physics Engine, and Rust Decision Engine.
 """
 
 from typing import Dict, Any, Optional, List
@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
 from backend.services.parser_service import parser_service
+from backend.services.decision_service import decision_service
 from parser.traffic_generator.generator import IndustrialTrafficGenerator
 
 router = APIRouter(prefix="/traffic", tags=["Traffic Processing"])
@@ -58,10 +59,10 @@ async def parse_traffic(request: ParseTrafficRequest):
 @router.post("/process", response_model=Dict[str, Any], status_code=status.HTTP_200_OK)
 async def process_traffic(request: ProcessTrafficRequest):
     """
-    Parse raw packet hex AND run Physics Engine safety evaluation on extracted command.
+    Parse raw packet hex AND run Physics Engine + Rust Decision Engine safety evaluation.
     """
     try:
-        result = parser_service.process_and_evaluate(
+        result = decision_service.process_packet_and_decide(
             hex_payload=request.hex_payload,
             protocol=request.protocol,
             src_ip=request.source_ip,
@@ -72,7 +73,7 @@ async def process_traffic(request: ProcessTrafficRequest):
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error evaluating packet physics: {str(e)}"
+            detail=f"Error evaluating packet decision: {str(e)}"
         )
 
 

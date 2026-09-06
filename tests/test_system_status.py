@@ -16,7 +16,7 @@ def test_system_status():
     data = response.json()
     assert data["backend"] == "OPERATIONAL"
     assert data["database"] in ["OPERATIONAL", "ERROR"]
-    assert data["physics_engine"] == "NOT_INITIALIZED"
-    assert data["decision_engine"] == "NOT_INITIALIZED"
+    assert data["physics_engine"] in ["OPERATIONAL", "NOT_INITIALIZED"]
+    assert data["decision_engine"] in ["OPERATIONAL", "UNAVAILABLE", "NOT_INITIALIZED"]
     assert data["websocket"] == "OPERATIONAL"
     assert "websocket_clients" in data

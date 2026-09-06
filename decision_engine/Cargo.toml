@@ -7,11 +7,11 @@ description = "High-speed decision and policy engine for VoltGuard"
 
 [[bin]]
 name = "decision_engine"
-path = "decision_engine/src/main.rs"
+path = "src/main.rs"
 
 [lib]
 name = "voltguard_decision_engine"
-path = "decision_engine/src/lib.rs"
+path = "src/lib.rs"
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
