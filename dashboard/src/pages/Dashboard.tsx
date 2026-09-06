@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { ShieldCheck, ShieldAlert, Cpu, AlertTriangle, Activity, Zap } from 'lucide-react';
 import { SecurityEvent, Alert, Telemetry, WebSocketMessage } from '../types';
 import { api } from '../services/api';
@@ -6,6 +6,29 @@ import { wsService } from '../services/websocket';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { RiskGauge } from '../components/common/RiskGauge';
 import { EventTable } from '../components/tables/EventTable';
+import { PhysicsChartsPanel, TelemetryHistory } from '../components/common/PhysicsChartsPanel';
+import { TelemetryDataPoint } from '../components/common/TelemetryChart';
+
+const MAX_HISTORY = 60;
+
+function formatTime(ts?: string): string {
+  if (!ts) return '--:--';
+  try {
+    return new Date(ts).toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  } catch {
+    return '--:--';
+  }
+}
+
+function appendHistory(
+  prev: TelemetryDataPoint[],
+  value: number | undefined,
+  ts: string,
+): TelemetryDataPoint[] {
+  if (value === undefined || value === null) return prev;
+  const next = [...prev, { t: formatTime(ts), value }];
+  return next.length > MAX_HISTORY ? next.slice(next.length - MAX_HISTORY) : next;
+}
 
 export const Dashboard: React.FC = () => {
   const [events, setEvents] = useState<SecurityEvent[]>([]);
@@ -14,17 +37,53 @@ export const Dashboard: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [liveStream, setLiveStream] = useState<WebSocketMessage[]>([]);
 
+  // Rolling history for Recharts
+  const [history, setHistory] = useState<TelemetryHistory>({
+    pressure: [],
+    flow: [],
+    temperature: [],
+    rpm: [],
+  });
+
+  // Seed history from REST telemetry data on first load
+  const historySeeded = useRef(false);
+
   useEffect(() => {
     async function loadInitialData() {
       try {
         const [evtData, alertData, telemData] = await Promise.all([
           api.getEvents(20, 0),
           api.getAlerts(10, 0),
-          api.getTelemetry(1, 0),
+          api.getTelemetry(60, 0),
         ]);
         setEvents(evtData);
         setAlerts(alertData);
-        if (telemData && telemData.length > 0) {
+
+        // Seed charts from historical REST data (most-recent telemetry rows, oldest first)
+        if (!historySeeded.current && telemData && telemData.length > 0) {
+          historySeeded.current = true;
+          const sorted = [...telemData].reverse(); // oldest → newest
+          const seedPressure: TelemetryDataPoint[] = sorted
+            .filter((t) => t.pressure !== undefined)
+            .map((t) => ({ t: formatTime(t.timestamp), value: t.pressure! }));
+          const seedFlow: TelemetryDataPoint[] = sorted
+            .filter((t) => t.flow_rate !== undefined)
+            .map((t) => ({ t: formatTime(t.timestamp), value: t.flow_rate! }));
+          const seedTemp: TelemetryDataPoint[] = sorted
+            .filter((t) => t.temperature !== undefined)
+            .map((t) => ({ t: formatTime(t.timestamp), value: t.temperature! }));
+          const seedRpm: TelemetryDataPoint[] = sorted
+            .filter((t) => t.pump_rpm !== undefined)
+            .map((t) => ({ t: formatTime(t.timestamp), value: t.pump_rpm! }));
+
+          setHistory({
+            pressure: seedPressure.slice(-MAX_HISTORY),
+            flow: seedFlow.slice(-MAX_HISTORY),
+            temperature: seedTemp.slice(-MAX_HISTORY),
+            rpm: seedRpm.slice(-MAX_HISTORY),
+          });
+
+          // Set current telemetry snapshot from most recent record
           setTelemetry(telemData[0]);
         }
       } catch (err) {
@@ -58,18 +117,30 @@ export const Dashboard: React.FC = () => {
         };
         setEvents((prev) => [newEvt, ...prev.slice(0, 19)]);
 
+        // Update live snapshot telemetry
         if (msg.predicted_pressure !== undefined) {
           setTelemetry({
             timestamp: msg.timestamp,
             device: msg.device_id,
-            pump_rpm: msg.value && msg.command === 'SET_RPM' ? msg.value : 1200,
+            pump_rpm: msg.command === 'SET_RPM' && msg.value !== undefined ? msg.value : undefined,
             valve_position: 50,
             pressure: msg.predicted_pressure,
             flow_rate: msg.predicted_flow,
             temperature: msg.predicted_temperature,
-            stress: msg.system_stress,
           });
         }
+
+        // Append to rolling chart history
+        const ts = msg.timestamp || new Date().toISOString();
+        setHistory((prev) => ({
+          pressure: appendHistory(prev.pressure, msg.predicted_pressure, ts),
+          flow: appendHistory(prev.flow, msg.predicted_flow, ts),
+          temperature: appendHistory(prev.temperature, msg.predicted_temperature, ts),
+          rpm:
+            msg.command === 'SET_RPM' && msg.value !== undefined
+              ? appendHistory(prev.rpm, msg.value, ts)
+              : prev.rpm,
+        }));
       }
     });
 
@@ -139,7 +210,7 @@ export const Dashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* Main Grid: Risk Overview & Physical Telemetry */}
+      {/* Risk Assessment & Live Event Stream Row */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '1.25rem' }}>
         {/* Risk & Decision Status */}
         <div className="panel-card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
@@ -170,75 +241,14 @@ export const Dashboard: React.FC = () => {
           </div>
         </div>
 
-        {/* Physical Telemetry Panel */}
-        <div className="panel-card">
-          <div className="panel-header">
-            <span className="panel-title"><Activity size={16} color="var(--color-safe)" /> Physical Telemetry (Pump-01 Process)</span>
-            <span className="mono" style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Updated live</span>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem' }}>
-            <div style={{ padding: '0.75rem', backgroundColor: 'var(--bg-secondary)', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Pump Speed</div>
-              <div className="mono" style={{ fontSize: '1.4rem', fontWeight: 700, color: 'var(--color-accent)' }}>
-                {telemetry?.pump_rpm ?? 1200} <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>RPM</span>
-              </div>
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Limit: 3600 RPM</div>
-            </div>
-
-            <div style={{ padding: '0.75rem', backgroundColor: 'var(--bg-secondary)', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Valve Position</div>
-              <div className="mono" style={{ fontSize: '1.4rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                {telemetry?.valve_position ?? 50} <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>%</span>
-              </div>
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Range: 0 - 100%</div>
-            </div>
-
-            <div style={{ padding: '0.75rem', backgroundColor: 'var(--bg-secondary)', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Pipeline Pressure</div>
-              <div className="mono" style={{ fontSize: '1.4rem', fontWeight: 700, color: (telemetry?.pressure ?? 2.0) > 80 ? 'var(--color-critical)' : 'var(--color-safe)' }}>
-                {(telemetry?.pressure ?? 2.0).toFixed(1)} <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>bar</span>
-              </div>
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Limit: 80.0 bar</div>
-            </div>
-
-            <div style={{ padding: '0.75rem', backgroundColor: 'var(--bg-secondary)', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Fluid Flow Rate</div>
-              <div className="mono" style={{ fontSize: '1.4rem', fontWeight: 700 }}>
-                {(telemetry?.flow_rate ?? 120.0).toFixed(1)} <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>L/min</span>
-              </div>
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Limit: 500.0 L/min</div>
-            </div>
-
-            <div style={{ padding: '0.75rem', backgroundColor: 'var(--bg-secondary)', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Fluid Temperature</div>
-              <div className="mono" style={{ fontSize: '1.4rem', fontWeight: 700 }}>
-                {(telemetry?.temperature ?? 45.0).toFixed(1)} <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>°C</span>
-              </div>
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Limit: 120.0 °C</div>
-            </div>
-
-            <div style={{ padding: '0.75rem', backgroundColor: 'var(--bg-secondary)', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Pipeline Stress</div>
-              <div className="mono" style={{ fontSize: '1.4rem', fontWeight: 700 }}>
-                {(telemetry?.stress ?? 15.0).toFixed(1)} <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>MPa</span>
-              </div>
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Limit: 130.0 MPa</div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Grid: Live Event Stream & Recent Events Table */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '1.25rem' }}>
-        {/* Live Stream Panel */}
+        {/* Live Event Stream Panel */}
         <div className="panel-card">
           <div className="panel-header">
             <span className="panel-title"><Zap size={16} color="var(--color-safe)" /> Live Event Stream</span>
             <span className="mono" style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>WebSocket</span>
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: '350px', overflowY: 'auto' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: '280px', overflowY: 'auto' }}>
             {liveStream.length === 0 ? (
               <div style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
                 Waiting for WebSocket live traffic...
@@ -275,15 +285,24 @@ export const Dashboard: React.FC = () => {
             )}
           </div>
         </div>
+      </div>
 
-        {/* Recent Security Events Table */}
-        <div className="panel-card">
-          <div className="panel-header">
-            <span className="panel-title"><ShieldAlert size={16} color="var(--color-accent)" /> Recent Security Events</span>
-            <span className="mono" style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Showing {events.length} latest</span>
-          </div>
-          <EventTable events={events} loading={loading} />
+      {/* Live Physics Telemetry Charts (2x2 grid) */}
+      <PhysicsChartsPanel
+        history={history}
+        currentPressure={telemetry?.pressure ?? null}
+        currentFlow={telemetry?.flow_rate ?? null}
+        currentTemperature={telemetry?.temperature ?? null}
+        currentRpm={telemetry?.pump_rpm ?? null}
+      />
+
+      {/* Recent Security Events Table */}
+      <div className="panel-card">
+        <div className="panel-header">
+          <span className="panel-title"><ShieldAlert size={16} color="var(--color-accent)" /> Recent Security Events</span>
+          <span className="mono" style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Showing {events.length} latest</span>
         </div>
+        <EventTable events={events} loading={loading} />
       </div>
     </div>
   );
