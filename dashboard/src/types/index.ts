@@ -27,17 +27,64 @@ export interface SecurityEvent {
   safety_state?: SafetyState;
   decision?: Decision;
   reason?: string;
+  violations?: string;
+  explanation?: string;
+  function_code?: number;
+  register?: number;
+  alert_id?: number;
   latency_ms?: number;
 }
 
 export interface Alert {
   id: number;
   timestamp: string;
-  severity: 'INFO' | 'WARNING' | 'CRITICAL';
+  severity: 'INFO' | 'WARNING' | 'CRITICAL' | 'CATASTROPHIC';
+  status: 'ACTIVE' | 'ACKNOWLEDGED' | 'RESOLVED';
   title: string;
   message?: string;
   device?: string;
+  event_id?: number;
   acknowledged: boolean;
+  acknowledged_at?: string;
+  resolved_at?: string;
+}
+
+export interface AlertSummary {
+  total: number;
+  active: number;
+  acknowledged: number;
+  resolved: number;
+  critical: number;
+  catastrophic: number;
+  warning: number;
+}
+
+export interface PaginatedResponse<T> {
+  items: T[];
+  total: number;
+  page: number;
+  page_size: number;
+  has_next: boolean;
+}
+
+export interface Device {
+  id: number;
+  device_id: string;
+  name?: string;
+  device_type?: string;
+  ip_address?: string;
+  protocol?: string;
+  connection_status: 'ONLINE' | 'OFFLINE' | 'STALE';
+  last_seen?: string;
+  last_pump_rpm?: number;
+  last_valve_position?: number;
+  last_pressure?: number;
+  last_flow_rate?: number;
+  last_temperature?: number;
+  last_stress?: number;
+  last_risk_score?: number;
+  last_safety_state?: SafetyState;
+  last_decision?: Decision;
 }
 
 export interface Telemetry {

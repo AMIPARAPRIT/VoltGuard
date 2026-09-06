@@ -7,6 +7,7 @@ import { EventsPage } from './pages/Events';
 import { AlertsPage } from './pages/Alerts';
 import { DevicesPage } from './pages/Devices';
 import { SimulationPage } from './pages/Simulation';
+import { ToastContainer } from './components/common/Toast';
 import { SystemStatus } from './types';
 import { api } from './services/api';
 import { wsService } from './services/websocket';
@@ -45,6 +46,8 @@ export const App: React.FC = () => {
           </main>
         </div>
       </div>
+      {/* Global toast notification container */}
+      <ToastContainer />
     </Router>
   );
 };

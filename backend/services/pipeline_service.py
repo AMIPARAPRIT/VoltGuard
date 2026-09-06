@@ -26,7 +26,8 @@ from __future__ import annotations
 import asyncio
 import sys
 import time
-from datetime import datetime, timezone
+import json
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple, Union
 
@@ -40,6 +41,7 @@ from backend.database.database import SessionLocal
 from backend.models.event import SecurityEvent
 from backend.models.alert import Alert
 from backend.models.telemetry import Telemetry
+from backend.models.device import Device
 from backend.websocket.manager import ws_manager
 
 from parser.wrapper import ProtocolParserWrapper, command_to_physics_input
@@ -166,6 +168,8 @@ class PipelineService:
                 destination_ip=norm_cmd.get("destination_ip", dest_ip) if norm_cmd else dest_ip,
                 device=device_id,
                 protocol=proto,
+                function_code=norm_cmd.get("function_code") if norm_cmd else None,
+                register=norm_cmd.get("register") if norm_cmd else None,
                 command=cmd_name,
                 command_value=float(cmd_val),
                 predicted_pressure=physics_result.predicted_pressure if physics_result else None,
@@ -174,26 +178,42 @@ class PipelineService:
                 risk_score=decision_result.get("risk_score"),
                 safety_state=str(decision_result.get("safety_state")),
                 decision=str(decision_result.get("decision")),
+                reason=decision_result.get("reason"),
+                violations=json.dumps([v if isinstance(v, dict) else (v.model_dump() if hasattr(v, 'model_dump') else dict(v)) for v in physics_result.violations]) if physics_result and hasattr(physics_result, "violations") and physics_result.violations else None,
+                explanation=physics_result.explanation if physics_result and hasattr(physics_result, "explanation") else None,
                 latency_ms=total_processing_ms,
             )
             db.add(event_record)
+            db.flush()  # To get event_record.id for the alert
 
             # Alert Creation (if BLOCK, BLOCK_CRITICAL, or MONITOR)
             dec_str = str(decision_result.get("decision")).upper()
             if dec_str in ("BLOCK", "BLOCK_CRITICAL", "MONITOR"):
-                severity = "CRITICAL" if dec_str == "BLOCK_CRITICAL" else ("WARNING" if dec_str in ("BLOCK", "MONITOR") else "INFO")
+                severity = "CATASTROPHIC" if dec_str == "BLOCK_CRITICAL" else ("WARNING" if dec_str in ("BLOCK", "MONITOR") else "INFO")
                 title = f"SECURITY ALERT: [{dec_str}] on {device_id}"
                 message = decision_result.get("reason", "Physical safety threshold exceeded.")
 
-                alert_record = Alert(
-                    severity=severity,
-                    title=title,
-                    message=message,
-                    device=device_id,
-                    acknowledged=False,
-                )
-                db.add(alert_record)
-                logger.info(f"[ALERT] Created Alert id={title} severity={severity}")
+                # Deduplication check
+                recent_alert = db.query(Alert).filter(
+                    Alert.device == device_id,
+                    Alert.severity == severity,
+                    Alert.status == "ACTIVE",
+                    Alert.timestamp >= datetime.now(timezone.utc) - timedelta(seconds=60)
+                ).first()
+
+                if not recent_alert:
+                    alert_record = Alert(
+                        severity=severity,
+                        title=title,
+                        message=message,
+                        device=device_id,
+                        event_id=event_record.id,
+                        acknowledged=False,
+                    )
+                    db.add(alert_record)
+                    db.flush()
+                    event_record.alert_id = alert_record.id
+                    logger.info(f"[ALERT] Created Alert id={alert_record.id} severity={severity}")
 
             # Telemetry Persistence
             if physics_result:
@@ -215,6 +235,34 @@ class PipelineService:
                 db.refresh(alert_record)
             if telemetry_record:
                 db.refresh(telemetry_record)
+
+            # Device UPSERT
+            try:
+                device_record = db.query(Device).filter(Device.device_id == device_id).first()
+                if not device_record:
+                    device_record = Device(device_id=device_id)
+                    db.add(device_record)
+                
+                device_record.ip_address = norm_cmd.get("destination_ip", dest_ip) if norm_cmd else dest_ip
+                device_record.protocol = proto
+                device_record.connection_status = "ONLINE"
+                device_record.last_seen = datetime.now(timezone.utc)
+                
+                if physics_result:
+                    device_record.last_pump_rpm = physics_result.pump_rpm
+                    device_record.last_valve_position = physics_result.valve_position
+                    device_record.last_pressure = physics_result.predicted_pressure
+                    device_record.last_flow_rate = physics_result.predicted_flow
+                    device_record.last_temperature = physics_result.predicted_temperature
+                    device_record.last_stress = physics_result.system_stress
+                    device_record.last_risk_score = decision_result.get("risk_score")
+                    device_record.last_safety_state = decision_result.get("safety_state")
+                    device_record.last_decision = decision_result.get("decision")
+                
+                db.commit()
+            except Exception as e:
+                logger.error(f"[ERROR] Failed to upsert device: {e}")
+                db.rollback()
 
             logger.info(f"[PERSISTED] SecurityEvent ID={event_record.id if event_record else 'N/A'}")
 

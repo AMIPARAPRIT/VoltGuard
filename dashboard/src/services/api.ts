@@ -1,4 +1,4 @@
-import { SystemStatus, SecurityEvent, Alert, Telemetry, PipelineResponse } from '../types';
+import { SystemStatus, SecurityEvent, Alert, Telemetry, PipelineResponse, AlertSummary, PaginatedResponse, Device } from '../types';
 
 const API_BASE = '/api';
 
@@ -15,12 +15,40 @@ export const api = {
     return fetchJson<SystemStatus>(`${API_BASE}/system/status`);
   },
 
-  async getEvents(limit: number = 50, offset: number = 0): Promise<SecurityEvent[]> {
-    return fetchJson<SecurityEvent[]>(`${API_BASE}/events/?limit=${limit}&offset=${offset}`);
+  async getEvents(
+    page: number = 1,
+    pageSize: number = 50,
+    filters?: { decision?: string; safety_state?: string; device?: string; protocol?: string; search?: string }
+  ): Promise<PaginatedResponse<SecurityEvent>> {
+    const params = new URLSearchParams({ page: page.toString(), page_size: pageSize.toString() });
+    if (filters) {
+      Object.entries(filters).forEach(([key, value]) => {
+        if (value) params.append(key, value);
+      });
+    }
+    return fetchJson<PaginatedResponse<SecurityEvent>>(`${API_BASE}/events/?${params.toString()}`);
   },
 
-  async getAlerts(limit: number = 50, offset: number = 0): Promise<Alert[]> {
-    return fetchJson<Alert[]>(`${API_BASE}/alerts/?limit=${limit}&offset=${offset}`);
+  async getEventDetail(eventId: number): Promise<SecurityEvent> {
+    return fetchJson<SecurityEvent>(`${API_BASE}/events/${eventId}`);
+  },
+
+  async getAlertSummary(): Promise<AlertSummary> {
+    return fetchJson<AlertSummary>(`${API_BASE}/alerts/summary`);
+  },
+
+  async getAlerts(
+    page: number = 1,
+    pageSize: number = 50,
+    filters?: { severity?: string; status?: string; device?: string; search?: string }
+  ): Promise<PaginatedResponse<Alert>> {
+    const params = new URLSearchParams({ page: page.toString(), page_size: pageSize.toString() });
+    if (filters) {
+      Object.entries(filters).forEach(([key, value]) => {
+        if (value && value !== 'ALL') params.append(key, value);
+      });
+    }
+    return fetchJson<PaginatedResponse<Alert>>(`${API_BASE}/alerts/?${params.toString()}`);
   },
 
   async acknowledgeAlert(alertId: number): Promise<Alert> {
@@ -29,8 +57,35 @@ export const api = {
     });
   },
 
-  async getTelemetry(limit: number = 50, offset: number = 0): Promise<Telemetry[]> {
-    return fetchJson<Telemetry[]>(`${API_BASE}/telemetry/?limit=${limit}&offset=${offset}`);
+  async resolveAlert(alertId: number): Promise<Alert> {
+    return fetchJson<Alert>(`${API_BASE}/alerts/${alertId}/resolve`, {
+      method: 'PATCH',
+    });
+  },
+
+  async getTelemetry(limit: number = 50, offset: number = 0): Promise<{items: Telemetry[], total: number}> {
+    const items = await fetchJson<Telemetry[]>(`${API_BASE}/telemetry/?limit=${limit}&offset=${offset}`);
+    return { items, total: items.length };
+  },
+
+  async getDevices(): Promise<{items: Device[], total: number}> {
+    return fetchJson<{items: Device[], total: number}>(`${API_BASE}/devices/`);
+  },
+
+  async getDeviceDetail(deviceId: string): Promise<Device> {
+    return fetchJson<Device>(`${API_BASE}/devices/${deviceId}`);
+  },
+
+  async getDeviceEvents(deviceId: string, page: number = 1, pageSize: number = 20): Promise<PaginatedResponse<SecurityEvent>> {
+    return fetchJson<PaginatedResponse<SecurityEvent>>(`${API_BASE}/devices/${deviceId}/events?page=${page}&page_size=${pageSize}`);
+  },
+
+  async getDeviceAlerts(deviceId: string, page: number = 1, pageSize: number = 20): Promise<PaginatedResponse<Alert>> {
+    return fetchJson<PaginatedResponse<Alert>>(`${API_BASE}/devices/${deviceId}/alerts?page=${page}&page_size=${pageSize}`);
+  },
+
+  async getDeviceTelemetry(deviceId: string): Promise<{items: Telemetry[], total: number}> {
+    return fetchJson<{items: Telemetry[], total: number}>(`${API_BASE}/devices/${deviceId}/telemetry`);
   },
 
   async sendSimulationCommand(payload: {

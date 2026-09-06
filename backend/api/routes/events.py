@@ -1,34 +1,62 @@
 """
-SecurityEvent CRUD endpoints.
+SecurityEvent CRUD endpoints — Phase 8.
 
-Provides list, detail, and create operations backed by SQLite.
+Provides: list (with filters + pagination) and detail operations.
 """
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from backend.database.database import get_db
 from backend.models.event import SecurityEvent
-from backend.schemas.event import SecurityEventCreate, SecurityEventResponse
+from backend.schemas.event import SecurityEventCreate, SecurityEventResponse, PaginatedEvents
 
 router = APIRouter(prefix="/events", tags=["Events"])
 
 
-@router.get("/", response_model=list[SecurityEventResponse])
+@router.get("/", response_model=PaginatedEvents)
 def list_events(
-    limit: int = 50,
-    offset: int = 0,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+    decision: Optional[str] = Query(None),
+    safety_state: Optional[str] = Query(None),
+    device: Optional[str] = Query(None),
+    protocol: Optional[str] = Query(None),
+    search: Optional[str] = Query(None),
     db: Session = Depends(get_db),
-) -> list[SecurityEvent]:
-    """Return a paginated list of security events, newest first."""
-    return (
-        db.query(SecurityEvent)
-        .order_by(SecurityEvent.timestamp.desc())
-        .offset(offset)
-        .limit(limit)
-        .all()
+) -> PaginatedEvents:
+    """Return a paginated, filtered list of security events, newest first."""
+    q = db.query(SecurityEvent)
+
+    if decision:
+        q = q.filter(SecurityEvent.decision == decision.upper())
+    if safety_state:
+        q = q.filter(SecurityEvent.safety_state == safety_state.upper())
+    if device:
+        q = q.filter(SecurityEvent.device.ilike(f"%{device}%"))
+    if protocol:
+        q = q.filter(SecurityEvent.protocol.ilike(f"%{protocol}%"))
+    if search:
+        s = f"%{search.lower()}%"
+        q = q.filter(
+            SecurityEvent.device.ilike(s)
+            | SecurityEvent.command.ilike(s)
+            | SecurityEvent.protocol.ilike(s)
+            | SecurityEvent.reason.ilike(s)
+        )
+
+    total = q.count()
+    offset = (page - 1) * page_size
+    items = q.order_by(SecurityEvent.timestamp.desc()).offset(offset).limit(page_size).all()
+
+    return PaginatedEvents(
+        items=items,
+        total=total,
+        page=page,
+        page_size=page_size,
+        has_next=(offset + page_size) < total,
     )
 
 

@@ -86,10 +86,9 @@ def get_db() -> Generator[Session, None, None]:
 
 def init_db() -> None:
     """
-    Create all tables defined by SQLAlchemy models.
-
-    Must be called after all model modules have been imported so that
-    Base.metadata is fully populated.
+    Create all tables defined by SQLAlchemy models, then apply
+    lightweight ALTER TABLE migrations for Phase 8 columns on
+    existing databases (preserves data, adds missing columns only).
     """
     # Import models to register them with Base.metadata
     import backend.models  # noqa: F401
@@ -97,6 +96,49 @@ def init_db() -> None:
     engine = get_engine()
     Base.metadata.create_all(bind=engine)
     logger.info("Database initialized — all tables created")
+    _run_migrations(engine)
+
+
+def _run_migrations(engine) -> None:
+    """
+    Apply idempotent column additions for Phase 8 schema changes.
+    SQLite does not support IF NOT EXISTS on ALTER TABLE, so we
+    check existing columns first and only add missing ones.
+    """
+    migrations = {
+        "alerts": [
+            ("status", "VARCHAR DEFAULT 'ACTIVE'"),
+            ("event_id", "INTEGER"),
+            ("acknowledged_at", "DATETIME"),
+            ("resolved_at", "DATETIME"),
+        ],
+        "security_events": [
+            ("reason", "TEXT"),
+            ("violations", "TEXT"),
+            ("explanation", "TEXT"),
+            ("function_code", "INTEGER"),
+            ("register", "INTEGER"),
+            ("alert_id", "INTEGER"),
+        ],
+    }
+
+    with engine.connect() as conn:
+        for table, columns in migrations.items():
+            try:
+                result = conn.execute(text(f"PRAGMA table_info({table})"))
+                existing = {row[1] for row in result.fetchall()}
+            except Exception as e:
+                logger.warning(f"[MIGRATION] Could not inspect {table}: {e}")
+                continue
+
+            for col_name, col_def in columns:
+                if col_name not in existing:
+                    try:
+                        conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_def}"))
+                        conn.commit()
+                        logger.info(f"[MIGRATION] Added column {table}.{col_name}")
+                    except Exception as e:
+                        logger.warning(f"[MIGRATION] Failed to add {table}.{col_name}: {e}")
 
 
 def check_db_health() -> bool:

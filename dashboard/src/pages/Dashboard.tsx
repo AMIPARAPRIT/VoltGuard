@@ -52,17 +52,17 @@ export const Dashboard: React.FC = () => {
     async function loadInitialData() {
       try {
         const [evtData, alertData, telemData] = await Promise.all([
-          api.getEvents(20, 0),
-          api.getAlerts(10, 0),
+          api.getEvents(1, 20),
+          api.getAlerts(1, 10),
           api.getTelemetry(60, 0),
         ]);
-        setEvents(evtData);
-        setAlerts(alertData);
+        setEvents(evtData.items);
+        setAlerts(alertData.items);
 
         // Seed charts from historical REST data (most-recent telemetry rows, oldest first)
-        if (!historySeeded.current && telemData && telemData.length > 0) {
+        if (!historySeeded.current && telemData && telemData.items.length > 0) {
           historySeeded.current = true;
-          const sorted = [...telemData].reverse(); // oldest → newest
+          const sorted = [...telemData.items].reverse(); // oldest → newest
           const seedPressure: TelemetryDataPoint[] = sorted
             .filter((t) => t.pressure !== undefined)
             .map((t) => ({ t: formatTime(t.timestamp), value: t.pressure! }));
@@ -84,7 +84,7 @@ export const Dashboard: React.FC = () => {
           });
 
           // Set current telemetry snapshot from most recent record
-          setTelemetry(telemData[0]);
+          setTelemetry(telemData.items[0]);
         }
       } catch (err) {
         console.error('Failed to load dashboard data:', err);
