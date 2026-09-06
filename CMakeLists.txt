@@ -5,18 +5,23 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# Enable testing
-enable_testing()
-
 # Include directories
 include_directories(
-    ${CMAKE_CURRENT_SOURCE_DIR}/core/protocols/modbus/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/parser
+    ${CMAKE_CURRENT_SOURCE_DIR}/parser/modbus
+    ${CMAKE_CURRENT_SOURCE_DIR}/parser/dnp3
+    ${CMAKE_CURRENT_SOURCE_DIR}/parser/models
 )
 
-# VoltGuard Core Library
-add_library(voltguard_core
-    core/protocols/modbus/src/modbus_parser.cpp
+# VoltGuard Protocol Parser Library
+add_library(voltguard_parser_lib
+    parser/modbus/modbus_parser.cpp
+    parser/dnp3/dnp3_parser.cpp
 )
 
-# Subdirectories
-add_subdirectory(tests/unit)
+# Standalone Parser Executable
+add_executable(voltguard_parser
+    parser/cli/main.cpp
+)
+
+target_link_libraries(voltguard_parser PRIVATE voltguard_parser_lib)
