@@ -64,6 +64,12 @@ def get_session_factory():
     return _SessionLocal
 
 
+def SessionLocal() -> Session:
+    """Return a new database session instance."""
+    factory = get_session_factory()
+    return factory()
+
+
 def get_db() -> Generator[Session, None, None]:
     """
     FastAPI dependency that yields a database session.

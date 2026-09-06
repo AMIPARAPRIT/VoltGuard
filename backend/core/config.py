@@ -33,16 +33,6 @@ class SafetyLimits(BaseModel):
 class PhysicsParameters(BaseModel):
     """
     Physics engine model constants.
-
-    These govern the simulation equations — NOT safety limits.
-    Loaded from the [physics] block in config.yaml.
-    All values have engineering-sensible defaults so tests run without a file.
-
-    Assumptions (prototype):
-    - Centrifugal pump: flow is linear with RPM and valve position.
-    - Pressure rise quadratic in flow (simplified Bernoulli / head-loss model).
-    - Temperature rises linearly with flow above an ambient baseline.
-    - Pipeline hoop stress proportional to internal pressure.
     """
     reference_rpm: float = 3000.0           # RPM defining base_flow
     base_flow: float = 300.0                # L/min at ref RPM, full valve, 100% eff.
@@ -52,6 +42,12 @@ class PhysicsParameters(BaseModel):
     pressure_loss_coefficient: float = 0.0002    # bar / (L/min) / resistance
     thermal_gain_coefficient: float = 0.04       # °C / (L/min)
     stress_per_bar: float = 1.55                 # MPa / bar
+
+
+class DecisionEngineConfig(BaseModel):
+    """Rust decision engine configuration."""
+    executable: str = "build/decision_engine.exe"
+    timeout_ms: int = 1000
 
 
 class DatabaseConfig(BaseModel):
@@ -67,7 +63,7 @@ class ServerConfig(BaseModel):
 
 class VoltGuardInfo(BaseModel):
     """Top-level application metadata."""
-    version: str = "0.2.0"
+    version: str = "0.5.0"
     service_name: str = "VoltGuard Backend"
     mode: str = "offline"
 
@@ -82,6 +78,7 @@ class Settings(BaseModel):
     voltguard: VoltGuardInfo = VoltGuardInfo()
     safety_limits: SafetyLimits = SafetyLimits()
     physics: PhysicsParameters = PhysicsParameters()
+    decision_engine: DecisionEngineConfig = DecisionEngineConfig()
     database: DatabaseConfig = DatabaseConfig()
     server: ServerConfig = ServerConfig()
 
@@ -105,4 +102,3 @@ def get_settings() -> Settings:
     """
     raw = _load_yaml()
     return Settings(**raw)
-

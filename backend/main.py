@@ -17,7 +17,7 @@ from backend.core.logging import get_logger
 from backend.database.database import init_db
 from backend.websocket.manager import ws_manager
 
-from backend.api.routes import health, system, events, telemetry, alerts, traffic
+from backend.api.routes import health, system, events, telemetry, alerts, traffic, simulation
 
 logger = get_logger(__name__)
 
@@ -83,6 +83,7 @@ app.include_router(events.router, prefix="/api")
 app.include_router(telemetry.router, prefix="/api")
 app.include_router(alerts.router, prefix="/api")
 app.include_router(traffic.router, prefix="/api")
+app.include_router(simulation.router, prefix="/api")
 
 
 # --- WebSocket Endpoints ----------------------------------------------------
