@@ -28,6 +28,7 @@ class CommandSimulationRequest(BaseModel):
     # Command parameter shortcuts
     command: Optional[str] = Field(None, description="Normalized command (e.g. 'SET_RPM', 'SET_VALVE')", json_schema_extra={"example": "SET_RPM"})
     value: Optional[float] = Field(None, description="Target command value (e.g. 1500.0, 50000.0)", json_schema_extra={"example": 50000.0})
+    valve_position: Optional[float] = Field(None, description="Target valve position percentage (0-100)", json_schema_extra={"example": 80.0})
     device_id: Optional[str] = Field(None, description="Target OT device ID", json_schema_extra={"example": "Pump-01"})
     scenario: Optional[str] = Field(None, description="Scenario type e.g., NORMAL, WARNING, CRITICAL, ATTACK, CUSTOM")
     
@@ -49,6 +50,10 @@ def process_simulation_command(
     Parser -> Physics Engine -> Rust Decision Engine -> DB Persistence -> WS Broadcast.
     """
     try:
+        curr_state = request.current_state.copy() if request.current_state else {}
+        if request.valve_position is not None:
+            curr_state["valve_position"] = float(request.valve_position)
+
         if request.hex_payload:
             cmd_input = request.hex_payload
         elif request.command and request.value is not None:
@@ -74,7 +79,7 @@ def process_simulation_command(
             protocol=request.protocol,
             src_ip=request.source_ip,
             dest_ip=request.destination_ip,
-            current_state=request.current_state,
+            current_state=curr_state if curr_state else None,
             db_session=db
         )
         

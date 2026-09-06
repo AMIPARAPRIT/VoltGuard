@@ -8,8 +8,11 @@ from sqlalchemy import desc
 
 from backend.models.report import ReportMetadata
 from backend.models.event import SecurityEvent
+from backend.models.alert import Alert
+from backend.models.device import Device
+from backend.models.simulation import SimulationHistory
 from backend.reports.generators.pdf_generator import generate_report_pdf
-from backend.core.config import PROJECT_ROOT
+from backend.core.config import PROJECT_ROOT, get_settings
 
 REPORTS_DIR = PROJECT_ROOT / "data" / "reports"
 REPORTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -24,7 +27,7 @@ class ReportService:
         
         # Prepare metadata
         metadata = ReportMetadata(
-            report_type=request_data.get('report_type'),
+            report_type=request_data.get('report_type', 'SECURITY_EVENT'),
             report_id=report_id,
             primary_device=request_data.get('primary_device'),
             severity=request_data.get('severity'),
@@ -47,58 +50,154 @@ class ReportService:
                 "report_id": metadata.report_id,
                 "report_type": metadata.report_type,
                 "generated_at": metadata.generated_at.isoformat(),
-                "status": metadata.status
+                "status": metadata.status,
+                "primary_device": metadata.primary_device,
+                "severity": metadata.severity
             },
             "data": data
         }
 
     def _gather_report_data(self, metadata: ReportMetadata, db: Session) -> Dict[str, Any]:
-        result = {}
-        # If it's linked to a specific event
+        result: Dict[str, Any] = {}
+        limits = get_settings().safety_limits
+
+        # 1. System Summary Metrics
+        device_count = db.query(Device).count()
+        event_count = db.query(SecurityEvent).count()
+        alert_count = db.query(Alert).count()
+        blocked_count = db.query(SecurityEvent).filter(SecurityEvent.decision.in_(['BLOCK', 'BLOCK_CRITICAL'])).count()
+        critical_count = db.query(SecurityEvent).filter(SecurityEvent.safety_state.in_(['CRITICAL', 'CATASTROPHIC'])).count()
+
+        result['system_summary'] = {
+            "device_count": device_count,
+            "event_count": event_count,
+            "alert_count": alert_count,
+            "blocked_count": blocked_count,
+            "critical_count": critical_count,
+            "safety_limits": limits.model_dump()
+        }
+
+        # 2. Targeted Event / Alert / Incident Identification
+        target_event = None
         if metadata.event_id:
-            event = db.query(SecurityEvent).filter(SecurityEvent.id == metadata.event_id).first()
-            if event:
-                result['event'] = {
-                    "id": event.id,
-                    "timestamp": event.timestamp.isoformat(),
-                    "device": event.device,
-                    "protocol": event.protocol,
-                    "command": event.command,
-                    "command_value": event.command_value,
-                    "predicted_pressure": event.predicted_pressure,
-                    "predicted_flow": event.predicted_flow,
-                    "predicted_temperature": event.predicted_temperature,
-                    "risk_score": event.risk_score,
-                    "safety_state": event.safety_state,
-                    "decision": event.decision,
-                    "reason": event.reason,
-                    "violations": event.violations,
-                    "explanation": event.explanation
+            target_event = db.query(SecurityEvent).filter(SecurityEvent.id == metadata.event_id).first()
+        elif metadata.alert_id:
+            alert = db.query(Alert).filter(Alert.id == metadata.alert_id).first()
+            if alert and alert.event_id:
+                target_event = db.query(SecurityEvent).filter(SecurityEvent.id == alert.event_id).first()
+        elif metadata.report_type == 'INCIDENT_SUMMARY':
+            # Default to latest critical/catastrophic event if no event_id specified
+            target_event = db.query(SecurityEvent).filter(
+                SecurityEvent.safety_state.in_(['CRITICAL', 'CATASTROPHIC'])
+            ).order_by(desc(SecurityEvent.timestamp)).first()
+            if not target_event:
+                target_event = db.query(SecurityEvent).order_by(desc(SecurityEvent.timestamp)).first()
+
+        if target_event:
+            related_alert = None
+            if target_event.alert_id:
+                related_alert = db.query(Alert).filter(Alert.id == target_event.alert_id).first()
+
+            result['event'] = {
+                "id": target_event.id,
+                "timestamp": target_event.timestamp.isoformat(),
+                "device": target_event.device,
+                "protocol": target_event.protocol,
+                "source_ip": target_event.source_ip,
+                "destination_ip": target_event.destination_ip,
+                "command": target_event.command,
+                "command_value": target_event.command_value,
+                "predicted_pressure": target_event.predicted_pressure,
+                "predicted_flow": target_event.predicted_flow,
+                "predicted_temperature": target_event.predicted_temperature,
+                "risk_score": target_event.risk_score,
+                "safety_state": target_event.safety_state,
+                "decision": target_event.decision,
+                "reason": target_event.reason,
+                "violations": target_event.violations,
+                "explanation": target_event.explanation,
+                "latency_ms": target_event.latency_ms,
+                "alert_id": target_event.alert_id
+            }
+
+            if related_alert:
+                result['alert'] = {
+                    "id": related_alert.id,
+                    "title": related_alert.title,
+                    "severity": related_alert.severity,
+                    "status": related_alert.status,
+                    "message": related_alert.message,
+                    "timestamp": related_alert.timestamp.isoformat()
                 }
-        else:
-            # Gather list of events based on filters
-            query = db.query(SecurityEvent)
-            if metadata.primary_device:
-                query = query.filter(SecurityEvent.device == metadata.primary_device)
-            if metadata.severity:
-                if metadata.severity == 'CRITICAL':
-                    query = query.filter(SecurityEvent.safety_state.in_(['CRITICAL', 'CATASTROPHIC']))
-                else:
-                    query = query.filter(SecurityEvent.safety_state == metadata.severity)
+
+            # Chronological Incident Timeline
+            t_iso = target_event.timestamp.isoformat()
+            timeline = [
+                {"timestamp": t_iso, "stage": "Command Received", "details": f"{target_event.protocol.upper()} command {target_event.command} = {target_event.command_value} sent to {target_event.device} from {target_event.source_ip}"},
+                {"timestamp": t_iso, "stage": "Physics Simulation", "details": f"Physics engine evaluated: Pressure={target_event.predicted_pressure or 0:.1f} bar, Flow={target_event.predicted_flow or 0:.1f} L/min, Temp={target_event.predicted_temperature or 0:.1f} °C"},
+            ]
+            if target_event.safety_state != 'SAFE':
+                timeline.append({"timestamp": t_iso, "stage": "Safety Violation Detected", "details": f"Safety State: {target_event.safety_state} | Violations: {target_event.violations or 'Parameter limit exceeded'}"})
             
-            events = query.order_by(desc(SecurityEvent.timestamp)).limit(50).all()
-            result['events'] = []
-            for event in events:
-                result['events'].append({
-                    "id": event.id,
-                    "timestamp": event.timestamp.isoformat(),
-                    "device": event.device,
-                    "command": event.command,
-                    "command_value": event.command_value,
-                    "safety_state": event.safety_state,
-                    "decision": event.decision
-                })
-                
+            timeline.append({"timestamp": t_iso, "stage": "Rust Security Decision", "details": f"Rust Decision Engine evaluated policy: {target_event.decision} (Reason: {target_event.reason or 'Policy check'})"})
+            
+            if related_alert:
+                timeline.append({"timestamp": related_alert.timestamp.isoformat(), "stage": "Alert Generated", "details": f"Active Alert #{related_alert.id} generated: {related_alert.title} [{related_alert.severity}]"})
+            
+            result['timeline'] = timeline
+
+        # 3. Report-Specific Querying
+        if metadata.report_type == 'SIMULATION':
+            sim_query = db.query(SimulationHistory)
+            if metadata.primary_device:
+                sim_query = sim_query.filter(SimulationHistory.device_id == metadata.primary_device)
+            sims = sim_query.order_by(desc(SimulationHistory.timestamp)).limit(50).all()
+            result['simulations'] = [
+                {
+                    "id": s.id,
+                    "timestamp": s.timestamp.isoformat(),
+                    "scenario": s.scenario,
+                    "device_id": s.device_id,
+                    "protocol": s.protocol,
+                    "command": s.command,
+                    "command_value": s.command_value,
+                    "risk_score": s.risk_score,
+                    "safety_state": s.safety_state,
+                    "decision": s.decision,
+                    "event_id": s.event_id,
+                    "alert_id": s.alert_id
+                } for s in sims
+            ]
+        
+        # 4. Multi-Event Summaries
+        query = db.query(SecurityEvent)
+        if metadata.primary_device:
+            query = query.filter(SecurityEvent.device == metadata.primary_device)
+        if metadata.severity:
+            if metadata.severity == 'CRITICAL':
+                query = query.filter(SecurityEvent.safety_state.in_(['CRITICAL', 'CATASTROPHIC']))
+            else:
+                query = query.filter(SecurityEvent.safety_state == metadata.severity)
+
+        events = query.order_by(desc(SecurityEvent.timestamp)).limit(50).all()
+        result['events'] = [
+            {
+                "id": e.id,
+                "timestamp": e.timestamp.isoformat(),
+                "device": e.device,
+                "protocol": e.protocol,
+                "command": e.command,
+                "command_value": e.command_value,
+                "predicted_pressure": e.predicted_pressure,
+                "predicted_flow": e.predicted_flow,
+                "predicted_temperature": e.predicted_temperature,
+                "risk_score": e.risk_score,
+                "safety_state": e.safety_state,
+                "decision": e.decision,
+                "reason": e.reason
+            } for e in events
+        ]
+
         return result
 
     def get_report_pdf(self, report_db_id: int, db: Session) -> str:
@@ -111,10 +210,7 @@ class ReportService:
             
         pdf_path = str(REPORTS_DIR / f"{metadata.report_id}.pdf")
         
-        # If already exists, just return it (optional caching)
-        if os.path.exists(pdf_path):
-            return pdf_path
-            
+        # Regenerate to ensure fresh snapshot
         data = self._gather_report_data(metadata, db)
         
         meta_dict = {
@@ -142,3 +238,4 @@ class ReportService:
         ]
 
 report_service = ReportService()
+

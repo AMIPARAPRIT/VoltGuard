@@ -9,6 +9,8 @@ from backend.websocket.manager import ws_manager
 from parser.wrapper import ProtocolParserWrapper
 from decision_engine.wrapper import decision_engine_wrapper
 
+from backend.core.config import get_settings
+
 router = APIRouter(prefix="/system", tags=["System"])
 
 
@@ -37,3 +39,13 @@ def system_status() -> dict:
         "websocket": "OPERATIONAL",
         "websocket_clients": ws_manager.active_count,
     }
+
+
+@router.get("/limits")
+def system_limits() -> dict:
+    """
+    Returns authoritative physical safety limits configured in the system.
+    """
+    limits = get_settings().safety_limits
+    return limits.model_dump()
+

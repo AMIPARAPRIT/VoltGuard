@@ -37,25 +37,31 @@ function DataRow({ label, value, mono = false }: { label: string; value?: string
   );
 }
 
+import { useLocation } from 'react-router-dom';
+
 /* ─── Report Preview ────────────────────────────────────────────────────────── */
 function ReportPreview({ report }: { report: { metadata: ReportMetadata; data: any } | null }) {
   if (!report) {
     return (
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '0.9rem', flexDirection: 'column', gap: '0.5rem' }}>
         <FileText size={32} color="var(--text-muted)" />
-        <span>Generate a report to see its preview.</span>
+        <span>Select options and click GENERATE REPORT to preview results.</span>
       </div>
     );
   }
 
   const { metadata, data } = report;
+  const sys = data.system_summary;
   const evt = data.event;
+  const alert = data.alert;
+  const timeline = data.timeline || [];
+  const sims = data.simulations || [];
   const events = data.events || [];
 
   return (
     <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
 
-      {/* Header */}
+      {/* Report Header */}
       <div style={{
         background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
         border: '1px solid var(--border-color)',
@@ -63,7 +69,7 @@ function ReportPreview({ report }: { report: { metadata: ReportMetadata; data: a
         padding: '1.25rem',
       }}>
         <div style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--color-accent)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>VoltGuard</div>
-        <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '0.75rem' }}>Physics-Aware ICS/SCADA Security Report</div>
+        <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '0.75rem' }}>Physics-Aware ICS/SCADA Security & Audit Report</div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.5rem' }}>
           <DataRow label="Report ID" value={metadata.report_id} mono />
           <DataRow label="Report Type" value={metadata.report_type.replace('_', ' ')} />
@@ -74,46 +80,128 @@ function ReportPreview({ report }: { report: { metadata: ReportMetadata; data: a
         </div>
       </div>
 
-      {/* Specific Event Report */}
+      {/* System Summary Cards */}
+      {sys && (
+        <div className="panel-card">
+          <SectionHeader icon={BarChart2} title="System Operational Summary" />
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '0.5rem' }}>
+            <div style={{ backgroundColor: 'var(--bg-secondary)', padding: '0.6rem', borderRadius: 'var(--radius-sm)', textAlign: 'center' }}>
+              <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>DEVICES</div>
+              <div className="mono" style={{ fontSize: '1.1rem', fontWeight: 700 }}>{sys.device_count}</div>
+            </div>
+            <div style={{ backgroundColor: 'var(--bg-secondary)', padding: '0.6rem', borderRadius: 'var(--radius-sm)', textAlign: 'center' }}>
+              <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>EVENTS</div>
+              <div className="mono" style={{ fontSize: '1.1rem', fontWeight: 700 }}>{sys.event_count}</div>
+            </div>
+            <div style={{ backgroundColor: 'var(--bg-secondary)', padding: '0.6rem', borderRadius: 'var(--radius-sm)', textAlign: 'center' }}>
+              <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>ALERTS</div>
+              <div className="mono" style={{ fontSize: '1.1rem', fontWeight: 700, color: sys.alert_count > 0 ? 'var(--color-warning)' : 'inherit' }}>{sys.alert_count}</div>
+            </div>
+            <div style={{ backgroundColor: 'var(--bg-secondary)', padding: '0.6rem', borderRadius: 'var(--radius-sm)', textAlign: 'center' }}>
+              <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>BLOCKED</div>
+              <div className="mono" style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--color-critical)' }}>{sys.blocked_count}</div>
+            </div>
+            <div style={{ backgroundColor: 'var(--bg-secondary)', padding: '0.6rem', borderRadius: 'var(--radius-sm)', textAlign: 'center' }}>
+              <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>CRITICAL</div>
+              <div className="mono" style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--color-critical)' }}>{sys.critical_count}</div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Specific Event Details */}
       {evt && (
         <>
           <div className="panel-card">
-            <SectionHeader icon={Terminal} title="Event Details" />
+            <SectionHeader icon={Terminal} title="Primary Event / Incident Details" />
             <DataRow label="Event ID" value={`#${evt.id}`} mono />
             <DataRow label="Timestamp" value={new Date(evt.timestamp).toLocaleString()} />
             <DataRow label="Device" value={evt.device} />
             <DataRow label="Protocol" value={evt.protocol} />
-            <DataRow label="Command" value={evt.command} />
-            <DataRow label="Value" value={evt.command_value} />
+            <DataRow label="Network Source" value={`${evt.source_ip || 'N/A'} -> ${evt.destination_ip || 'N/A'}`} mono />
+            <DataRow label="Command Issued" value={`${evt.command} = ${evt.command_value}`} mono />
           </div>
 
           <div className="panel-card">
-            <SectionHeader icon={Activity} title="Physical Analysis" />
-            <DataRow label="Predicted Pressure" value={evt.predicted_pressure != null ? `${Number(evt.predicted_pressure).toFixed(2)} bar` : undefined} />
-            <DataRow label="Predicted Flow" value={evt.predicted_flow != null ? `${Number(evt.predicted_flow).toFixed(2)} m³/h` : undefined} />
-            <DataRow label="Predicted Temperature" value={evt.predicted_temperature != null ? `${Number(evt.predicted_temperature).toFixed(2)} °C` : undefined} />
-            <DataRow label="Risk Score" value={evt.risk_score != null ? Number(evt.risk_score).toFixed(1) : undefined} />
-            <DataRow label="Safety State" value={evt.safety_state} />
+            <SectionHeader icon={Activity} title="Physical Consequence & Safety Limits" />
+            <DataRow label="Predicted Pressure" value={evt.predicted_pressure != null ? `${Number(evt.predicted_pressure).toFixed(2)} bar (Max: ${sys?.safety_limits?.max_pressure || 80} bar)` : undefined} />
+            <DataRow label="Predicted Flow Rate" value={evt.predicted_flow != null ? `${Number(evt.predicted_flow).toFixed(2)} m³/h (Max: ${sys?.safety_limits?.max_flow || 500} m³/h)` : undefined} />
+            <DataRow label="Predicted Temperature" value={evt.predicted_temperature != null ? `${Number(evt.predicted_temperature).toFixed(2)} °C (Max: ${sys?.safety_limits?.max_temperature || 120} °C)` : undefined} />
+            <DataRow label="Calculated Risk Score" value={evt.risk_score != null ? `${Number(evt.risk_score).toFixed(1)} / 100` : undefined} />
+            <DataRow label="Assessed Safety State" value={evt.safety_state} />
           </div>
 
           <div className="panel-card">
-            <SectionHeader icon={Shield} title="Security Decision" />
+            <SectionHeader icon={Shield} title="Rust Decision Engine Policy Evaluation" />
             <div style={{ marginBottom: '0.5rem' }}><StatusBadge status={evt.decision} type="decision" /></div>
-            <DataRow label="Reason" value={evt.reason} />
+            <DataRow label="Policy Reason" value={evt.reason} />
             {evt.violations && <DataRow label="Violations" value={evt.violations} />}
             {evt.explanation && (
               <div style={{ marginTop: '0.75rem', padding: '0.6rem', backgroundColor: 'var(--bg-secondary)', borderRadius: 'var(--radius-sm)', fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                <strong style={{ color: 'var(--text-primary)' }}>Explanation: </strong>{evt.explanation}
+                <strong style={{ color: 'var(--text-primary)' }}>Physics Explanation: </strong>{evt.explanation}
               </div>
             )}
           </div>
         </>
       )}
 
+      {/* Incident Timeline */}
+      {timeline.length > 0 && (
+        <div className="panel-card">
+          <SectionHeader icon={Clock} title="Chronological Incident Timeline" />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            {timeline.map((item: any, i: number) => (
+              <div key={i} style={{ display: 'flex', gap: '0.75rem', backgroundColor: 'var(--bg-secondary)', padding: '0.5rem 0.75rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }}>
+                <span className="mono" style={{ fontSize: '0.72rem', color: 'var(--color-accent)', minWidth: '85px', flexShrink: 0 }}>{new Date(item.timestamp).toLocaleTimeString()}</span>
+                <div>
+                  <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-primary)' }}>{item.stage}</div>
+                  <div style={{ fontSize: '0.73rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>{item.details}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Simulation Runs Table */}
+      {sims.length > 0 && (
+        <div className="panel-card">
+          <SectionHeader icon={Terminal} title={`Industrial Simulation Runs (${sims.length} records)`} />
+          <div style={{ overflowX: 'auto' }}>
+            <table className="scada-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Timestamp</th>
+                  <th>Scenario</th>
+                  <th>Device</th>
+                  <th>Command / Value</th>
+                  <th>Risk</th>
+                  <th>Decision</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sims.map((s: any) => (
+                  <tr key={s.id}>
+                    <td className="mono" style={{ fontSize: '0.75rem' }}>#{s.id}</td>
+                    <td className="mono" style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{new Date(s.timestamp).toLocaleString()}</td>
+                    <td style={{ fontSize: '0.78rem', fontWeight: 700 }}>{s.scenario}</td>
+                    <td style={{ fontSize: '0.8rem' }}>{s.device_id}</td>
+                    <td className="mono" style={{ fontSize: '0.78rem' }}>{s.command} {s.command_value}</td>
+                    <td className="mono" style={{ fontSize: '0.78rem' }}>{s.risk_score?.toFixed(0)}</td>
+                    <td><StatusBadge status={s.decision} type="decision" /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {/* Events Table Report */}
       {events.length > 0 && (
         <div className="panel-card">
-          <SectionHeader icon={BarChart2} title={`Events Summary (${events.length} records)`} />
+          <SectionHeader icon={BarChart2} title={`Security Events Summary (${events.length} records)`} />
           <div style={{ overflowX: 'auto' }}>
             <table className="scada-table">
               <thead>
@@ -143,9 +231,9 @@ function ReportPreview({ report }: { report: { metadata: ReportMetadata; data: a
         </div>
       )}
 
-      {!evt && events.length === 0 && (
+      {!evt && events.length === 0 && sims.length === 0 && (
         <div style={{ padding: '1rem', color: 'var(--text-muted)', fontSize: '0.85rem', textAlign: 'center' }}>
-          No event data found for this report's filters.
+          No data found matching the selected report parameters.
         </div>
       )}
     </div>
@@ -154,11 +242,14 @@ function ReportPreview({ report }: { report: { metadata: ReportMetadata; data: a
 
 /* ─── Main Reports Page ─────────────────────────────────────────────────────── */
 export const ReportsPage: React.FC = () => {
-  const [reportType, setReportType] = useState('SECURITY_EVENT');
+  const location = useLocation();
+  const state = location.state as { event_id?: number; alert_id?: number; report_type?: string } | null;
+
+  const [reportType, setReportType] = useState(state?.report_type || 'SECURITY_EVENT');
   const [filterDevice, setFilterDevice] = useState('');
   const [filterSeverity, setFilterSeverity] = useState('');
-  const [filterEventId, setFilterEventId] = useState('');
-  const [filterAlertId, setFilterAlertId] = useState('');
+  const [filterEventId, setFilterEventId] = useState(state?.event_id ? state.event_id.toString() : '');
+  const [filterAlertId, setFilterAlertId] = useState(state?.alert_id ? state.alert_id.toString() : '');
 
   const [generating, setGenerating] = useState(false);
   const [generateError, setGenerateError] = useState<string | null>(null);

@@ -88,6 +88,10 @@ export const api = {
     return fetchJson<{items: Telemetry[], total: number}>(`${API_BASE}/devices/${deviceId}/telemetry`);
   },
 
+  async getSystemLimits(): Promise<{ max_pressure: number; max_rpm: number; max_temperature: number; max_flow: number; max_stress: number }> {
+    return fetchJson(`${API_BASE}/system/limits`);
+  },
+
   async sendSimulationCommand(payload: {
     hex_payload?: string;
     protocol?: string;
@@ -95,7 +99,9 @@ export const api = {
     destination_ip?: string;
     command?: string;
     value?: number;
+    valve_position?: number;
     device_id?: string;
+    scenario?: string;
     current_state?: Record<string, number>;
   }): Promise<PipelineResponse> {
     return fetchJson<PipelineResponse>(`${API_BASE}/simulation/command`, {

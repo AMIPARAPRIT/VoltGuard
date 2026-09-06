@@ -172,6 +172,8 @@ export const SimulationPage: React.FC = () => {
   const [customDevice, setCustomDevice] = useState('Pump-01');
   const [customSrcIp, setCustomSrcIp] = useState('192.168.1.20');
 
+  const [limits, setLimits] = useState<{ max_pressure: number; max_rpm: number; max_temperature: number; max_flow: number; max_stress: number } | null>(null);
+
   const [executing, setExecuting] = useState(false);
   const [lastResult, setLastResult] = useState<PipelineResponse | null>(null);
   const [lastError, setLastError] = useState<string | null>(null);
@@ -197,7 +199,17 @@ export const SimulationPage: React.FC = () => {
     }
   }, []);
 
-  useEffect(() => { loadHistory(); }, [loadHistory]);
+  const loadLimits = useCallback(async () => {
+    try {
+      const lim = await api.getSystemLimits();
+      setLimits(lim);
+    } catch { }
+  }, []);
+
+  useEffect(() => { 
+    loadHistory(); 
+    loadLimits();
+  }, [loadHistory, loadLimits]);
 
   const runSimulation = async () => {
     setExecuting(true);
@@ -214,10 +226,12 @@ export const SimulationPage: React.FC = () => {
         payload.destination_ip = '192.168.1.50';
         payload.command = sc.command;
         payload.value = sc.value;
+        payload.valve_position = sc.valve || 100;
         payload.device_id = sc.device_id;
       } else if (selectedScenario === 'CUSTOM') {
         payload.command = customCommand;
         payload.value = customValue;
+        payload.valve_position = customValve;
         payload.device_id = customDevice;
         payload.protocol = customProtocol;
         payload.source_ip = customSrcIp;
@@ -226,11 +240,10 @@ export const SimulationPage: React.FC = () => {
       } else {
         payload.command = sc.command;
         payload.value = sc.value;
+        payload.valve_position = (sc as any).valve || 60;
         payload.device_id = sc.device_id;
         payload.source_ip = '192.168.1.20';
         payload.destination_ip = '192.168.1.50';
-        // If the scenario has a valve override, send a second command? 
-        // For now, send RPM only (backend handles physics from RPM)
       }
 
       const res = await api.sendSimulationCommand(payload);
@@ -390,9 +403,14 @@ export const SimulationPage: React.FC = () => {
               <StatusBadge status={decision?.safety_state} type="state" />
               <StatusBadge status={decision?.decision} type="decision" />
               {lastResult.event_id && (
-                <button className="scada-btn" style={{ padding: '0.25rem 0.6rem', fontSize: '0.72rem' }} onClick={() => navigate(`/events`)}>
-                  <ExternalLink size={12} /> Event #{lastResult.event_id}
-                </button>
+                <>
+                  <button className="scada-btn" style={{ padding: '0.25rem 0.6rem', fontSize: '0.72rem' }} onClick={() => navigate(`/events`)}>
+                    <ExternalLink size={12} /> Event #{lastResult.event_id}
+                  </button>
+                  <button className="scada-btn primary" style={{ padding: '0.25rem 0.6rem', fontSize: '0.72rem' }} onClick={() => navigate('/reports', { state: { event_id: lastResult.event_id, report_type: 'INCIDENT_SUMMARY' } })}>
+                    <Zap size={12} /> Generate Report
+                  </button>
+                </>
               )}
             </div>
           </div>
