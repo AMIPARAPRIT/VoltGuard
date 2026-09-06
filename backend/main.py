@@ -2,17 +2,19 @@
 VoltGuard Backend — Main Application Entry Point
 
 Initializes FastAPI, mounts all API routes, sets up the database,
-and configures global exception handling.
+configures static dashboard serving, and configures global exception handling.
 """
 
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.exceptions import RequestValidationError
 from sqlalchemy.exc import SQLAlchemyError
 
-from backend.core.config import get_settings
+from backend.core.config import get_settings, PROJECT_ROOT
 from backend.core.logging import get_logger
 from backend.database.database import init_db
 from backend.websocket.manager import ws_manager
@@ -101,3 +103,19 @@ async def websocket_telemetry_endpoint(websocket: WebSocket):
             data = await websocket.receive_text()
     except WebSocketDisconnect:
         ws_manager.disconnect(websocket)
+
+
+# --- Static Dashboard Mounting -----------------------------------------------
+
+dist_path = PROJECT_ROOT / "dashboard" / "dist"
+if dist_path.exists():
+    app.mount("/assets", StaticFiles(directory=dist_path / "assets"), name="static_assets")
+
+    @app.get("/{full_path:path}")
+    async def serve_dashboard(full_path: str):
+        if full_path.startswith("api") or full_path.startswith("ws"):
+            return JSONResponse(status_code=404, content={"detail": "Not found"})
+        file_path = dist_path / full_path
+        if file_path.exists() and file_path.is_file():
+            return FileResponse(file_path)
+        return FileResponse(dist_path / "index.html")
