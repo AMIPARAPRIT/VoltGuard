@@ -1,0 +1,14 @@
+system:
+  mode: online
+
+network:
+  external_connectivity: true
+
+telemetry:
+  remote_sync: true
+
+updates:
+  automatic_download: true
+
+protection:
+  cloud_dependency: false

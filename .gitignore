@@ -1,0 +1,22 @@
+# Build outputs
+build/
+target/
+
+# Python
+__pycache__/
+*.pyc
+.env
+.venv
+venv/
+
+# Database and Data
+*.sqlite
+*.db
+data/
+
+# Logs
+*.log
+
+# C++/Rust specifics
+*.pcap
+Cargo.lock

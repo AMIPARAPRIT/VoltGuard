@@ -1,0 +1,59 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "VoltGuard Canonical Event Schema",
+  "description": "Schema for normalized industrial events in VoltGuard",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "enum": ["1.0"]
+    },
+    "event_id": {
+      "type": "string",
+      "pattern": "^VG-\\d{4}-\\d+$"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "source": {
+      "type": "object",
+      "properties": {
+        "ip": { "type": "string" },
+        "port": { "type": "integer" }
+      },
+      "required": ["ip", "port"]
+    },
+    "destination": {
+      "type": "object",
+      "properties": {
+        "ip": { "type": "string" },
+        "port": { "type": "integer" }
+      },
+      "required": ["ip", "port"]
+    },
+    "protocol": {
+      "type": "string",
+      "enum": ["modbus_tcp", "dnp3", "opc_ua"]
+    },
+    "asset": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string" }
+      }
+    },
+    "command": {
+      "type": "object",
+      "properties": {
+        "action": { "type": "string" },
+        "value": { "type": "number" },
+        "unit": { "type": "string" },
+        "raw_function_code": { "type": "integer" },
+        "raw_register": { "type": "integer" }
+      },
+      "required": ["action", "value"]
+    }
+  },
+  "required": ["schema_version", "event_id", "timestamp", "protocol", "command"]
+}
